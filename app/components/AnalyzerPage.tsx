@@ -14,6 +14,7 @@ import { BatchTab } from "@/app/components/BatchTab";
 import { BatchProvider } from "@/app/lib/batchContext";
 import { CritiqueTab } from "@/app/components/CritiqueTab";
 import { ResultsPanel } from "@/app/components/ResultsPanel";
+import { toast } from "@/app/lib/toast";
 import {
   LightPanel, ColorPanel, HSLPanel_Wrapped,
   ColorGradingPanel, DetailPanel, EffectsPanel, CalibrationPanel,
@@ -109,7 +110,6 @@ export default function AnalyzerPage() {
 
   // Shared preset state
   const [presetName, setPresetName] = useState("My Preset");
-  const [savedMsg, setSavedMsg] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState(DEFAULT_COLLECTION_NAME);
 
   const activeResult = tab === "analyze" ? analyzeResult : diffResult;
@@ -243,6 +243,7 @@ export default function AnalyzerPage() {
           ? e.message
           : "Failed to analyze image. Please try again.";
       setAnalyzeError(msg);
+      toast.error("Failed to analyze image. Please try again.");
     }
     setAnalyzeLoading(false);
   };
@@ -266,6 +267,7 @@ export default function AnalyzerPage() {
       setPresetName(data.style_summary || "Edit Difference");
     } catch {
       setDiffError("Failed to compare images. Please try again.");
+      toast.error("Failed to analyze image. Please try again.");
     }
     setDiffLoading(false);
   };
@@ -289,8 +291,7 @@ export default function AnalyzerPage() {
     if (!activeResult || !activeImage) return;
     const thumbnail = await generateThumbnail(activeImage);
     savePreset({ id: `preset-${Date.now()}`, name: presetName || "My Preset", collection: selectedCollection, thumbnail, result: activeEditedResult ?? activeResult!, savedAt: Date.now() });
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 2000);
+    toast.success("Preset saved to library");
   };
 
   const handleLoadPreset = (preset: SavedPreset) => {
@@ -504,10 +505,12 @@ export default function AnalyzerPage() {
             loading={tab === "analyze" ? analyzeLoading : diffLoading}
             presetName={presetName}
             setPresetName={setPresetName}
-            savedMsg={savedMsg}
             onSave={handleSave}
-            onDownload={() => (activeEditedResult ?? activeResult) && downloadXMP(activeEditedResult ?? activeResult!, presetName || "My Preset")}
-            image={activeImage}
+            onDownload={() => {
+              if (!(activeEditedResult ?? activeResult)) return;
+              downloadXMP(activeEditedResult ?? activeResult!, presetName || "My Preset");
+              toast.success("XMP preset downloaded");
+            }}
             selectedCollection={selectedCollection}
             setSelectedCollection={setSelectedCollection}
             collectionNames={collectionNames}

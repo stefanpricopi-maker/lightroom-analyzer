@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { downloadXMP } from "@/app/lib/xmp";
 import { RecommendedBadge } from "@/app/components/ui/HeroRecommendation";
 import type { BatchItem, SceneGroup } from "@/app/lib/batchTypes";
 import { StatusBadge } from "@/app/components/batch/StatusBadge";
+import { toast } from "@/app/lib/toast";
 
 export function BatchItemRow({
   item,
@@ -29,6 +30,15 @@ export function BatchItemRow({
 }) {
   const [showMove, setShowMove] = useState(false);
   const otherGroups = allGroups.filter((g) => g.id !== group.id);
+  const lastToastKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (item.status !== "error") return;
+    const key = `${item.id}:${item.error ?? ""}`;
+    if (lastToastKeyRef.current === key) return;
+    lastToastKeyRef.current = key;
+    toast.warning(`${item.file.name} failed — click Retry`);
+  }, [item.id, item.status, item.error, item.file.name]);
 
   return (
     <div
@@ -92,7 +102,10 @@ export function BatchItemRow({
         <StatusBadge status={item.status} />
         {item.status === "done" && item.merged && (
           <button
-            onClick={() => downloadXMP(item.merged!, item.file.name.replace(/\.[^.]+$/, ""))}
+            onClick={() => {
+              downloadXMP(item.merged!, item.file.name.replace(/\.[^.]+$/, ""));
+              toast.success("XMP preset downloaded");
+            }}
             className="font-mono text-[9px] px-1.5 py-0.5 rounded transition-colors"
             style={{ background: "var(--text-1)", color: "var(--bg)" }}
           >

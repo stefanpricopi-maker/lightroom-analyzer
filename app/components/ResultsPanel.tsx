@@ -20,10 +20,8 @@ export function ResultsPanel({
   loading,
   presetName,
   setPresetName,
-  savedMsg,
   onSave,
   onDownload,
-  image,
   selectedCollection,
   setSelectedCollection,
   collectionNames,
@@ -35,10 +33,8 @@ export function ResultsPanel({
   loading: boolean;
   presetName: string;
   setPresetName: (v: string) => void;
-  savedMsg: boolean;
   onSave: () => void;
   onDownload: () => void;
-  image: string | null;
   selectedCollection: string;
   setSelectedCollection: (v: string) => void;
   collectionNames: string[];
@@ -124,7 +120,7 @@ export function ResultsPanel({
             className="flex-1 px-3 py-2.5 border font-mono text-[11px] rounded-lg transition-colors flex items-center justify-center gap-1.5"
             style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-2)" }}
           >
-            {savedMsg ? "✓ Saved!" : "◫  Save to Library"}
+            ◫  Save to Library
           </button>
           <button
             onClick={onDownload}

@@ -7,6 +7,7 @@ import {
   getAllCollectionNames, DEFAULT_COLLECTION_NAME,
   type SavedPreset,
 } from "@/app/lib/presetStorage";
+import { toast } from "@/app/lib/toast";
 
 interface PresetLibraryProps {
   onLoad: (preset: SavedPreset) => void;
@@ -70,6 +71,7 @@ export function PresetLibrary({ onLoad, onClose }: PresetLibraryProps) {
     deleteCollection(name);
     if (activeCollection === name) setActiveCollection("__all__");
     refresh();
+    toast.info("Collection deleted — presets moved to Uncategorized");
   };
 
   const handleMovePreset = (presetId: string, collection: string) => {
@@ -82,6 +84,7 @@ export function PresetLibrary({ onLoad, onClose }: PresetLibraryProps) {
     deletePreset(id);
     setConfirmDelete(null);
     refresh();
+    toast.success("Preset deleted");
   };
 
   const formatDate = (ts: number) =>

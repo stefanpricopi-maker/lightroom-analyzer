@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBatch } from "@/app/lib/batchContext";
 import { useBatchQueue } from "@/app/lib/useBatchQueue";
 import { exportGroupsZip } from "@/app/lib/batchExport";
@@ -9,6 +9,7 @@ import type { BatchItem, SceneGroup } from "@/app/lib/batchTypes";
 import { SmartCluster } from "@/app/components/ui/SmartCluster";
 import { ProgressBar } from "@/app/components/batch/ProgressBar";
 import { SceneGroupCard } from "@/app/components/batch/SceneGroupCard";
+import { toast } from "@/app/lib/toast";
 
 // ─── Main BatchTab ────────────────────────────────────────────────────────────
 
@@ -16,24 +17,41 @@ export function BatchTab() {
   const { state, dispatch } = useBatch();
   const { startQueue, stopQueue, isRunning, stats } = useBatchQueue();
   const [exporting, setExporting] = useState(false);
-  const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<{ item: BatchItem; group: SceneGroup } | null>(null);
+  const wasRunningRef = useRef(false);
+  const lastCompletionKeyRef = useRef<string | null>(null);
 
   const handleExportZip = async () => {
-    setExporting(true); setExportMsg(null);
+    setExporting(true);
     try {
       const summary = await exportGroupsZip(state.groups);
-      setExportMsg(`✓ ${summary.exported} presets exported${summary.skipped > 0 ? ` (${summary.skipped} skipped)` : ""}`);
-      setTimeout(() => setExportMsg(null), 4000);
+      toast.success(`ZIP downloaded — ${summary.exported} presets included`);
     } catch (err) {
-      setExportMsg(err instanceof Error ? err.message : "Export failed");
-      setTimeout(() => setExportMsg(null), 4000);
+      toast.error("Export failed. Please try again.");
     }
     setExporting(false);
   };
 
   const readyGroups = state.groups.filter((g) => g.heroStatus === "done" && g.heroResult);
   const totalWaiting = state.groups.filter((g) => g.heroResult).flatMap((g) => g.items.filter((i) => i.status === "waiting")).length;
+
+  useEffect(() => {
+    // When a run completes (running -> not running), emit completion toast once.
+    if (isRunning) {
+      wasRunningRef.current = true;
+      return;
+    }
+    if (!wasRunningRef.current) return;
+
+    const completed = stats.done + stats.errors;
+    const total = stats.totalItems;
+    const key = `${completed}/${total}/${stats.errors}`;
+    if (total > 0 && completed === total && lastCompletionKeyRef.current !== key) {
+      lastCompletionKeyRef.current = key;
+      toast.success(`${stats.done} photos processed successfully`);
+    }
+    wasRunningRef.current = false;
+  }, [isRunning, stats.done, stats.errors, stats.totalItems]);
 
   return (
     <div className="space-y-4">
@@ -60,7 +78,7 @@ export function BatchTab() {
             </button>
 
             {isRunning ? (
-              <button onClick={stopQueue}
+              <button onClick={() => { stopQueue(); toast.info("Processing stopped"); }}
                 className="font-mono text-[11px] px-3 py-2 rounded-lg transition-colors"
                 style={{ background: "rgba(220,38,38,0.1)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.3)" }}>
                 ◼ Stop
@@ -89,12 +107,6 @@ export function BatchTab() {
           <div className="mt-3">
             <ProgressBar done={stats.done} errors={stats.errors} total={stats.totalItems} />
           </div>
-        )}
-
-        {exportMsg && (
-          <p className="font-mono text-[11px] mt-2" style={{ color: exportMsg.startsWith("✓") ? "#16a34a" : "#dc2626" }}>
-            {exportMsg}
-          </p>
         )}
 
         {readyGroups.length === 0 && stats.totalItems > 0 && (
