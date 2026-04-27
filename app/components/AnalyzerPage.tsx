@@ -242,7 +242,9 @@ export default function AnalyzerPage() {
   };
 
   const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — allow large files, we compress before API
-  const API_MAX_SIZE = 10 * 1024 * 1024;   // 10MB — compress down to this for the API
+  // Vercel has a fairly small request body limit; base64 adds ~33% overhead.
+  // Keep the base64 payload comfortably under typical serverless limits.
+  const API_MAX_BYTES = 2.5 * 1024 * 1024; // ~2.5MB binary target
 
   // Compress image to target size using canvas
   const compressImage = (file: File): Promise<{ base64: string; mime: string }> => {
@@ -252,23 +254,48 @@ export default function AnalyzerPage() {
       img.onload = () => {
         URL.revokeObjectURL(url);
         const canvas = document.createElement("canvas");
-        // Scale down if needed — target max 2400px on longest side
-        const MAX_DIM = 2400;
-        let { width, height } = img;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
-          else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
-        }
-        canvas.width = width;
-        canvas.height = height;
         const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, width, height);
-        // Try quality 0.85 first, drop to 0.7 if still too big
-        let base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
-        if (base64.length * 0.75 > API_MAX_SIZE) {
-          base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+
+        // Start reasonably large, then adapt until under size.
+        let maxDim = 2000;
+        let quality = 0.82;
+
+        const encode = () => canvas.toDataURL("image/jpeg", quality).split(",")[1];
+        const base64ToBytes = (b64: string) => b64.length * 0.75;
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const base64 = encode();
+          if (base64ToBytes(base64) <= API_MAX_BYTES) {
+            resolve({ base64, mime: "image/jpeg" });
+            return;
+          }
+
+          // Too big: first reduce quality, then dimensions.
+          if (quality > 0.55) quality = Math.max(0.55, quality - 0.08);
+          else if (maxDim > 1200) maxDim = Math.max(1200, Math.round(maxDim * 0.85));
+          else {
+            // Hard fallback: return best effort (still may fail on server, but avoids infinite loop)
+            resolve({ base64, mime: "image/jpeg" });
+            return;
+          }
         }
-        resolve({ base64, mime: "image/jpeg" });
       };
       img.src = url;
     });
@@ -291,18 +318,11 @@ export default function AnalyzerPage() {
     setImage(URL.createObjectURL(file));
     // Extract EXIF from original file before any compression
     readFileAsBuffer(file).then((buf) => setExifData(extractExif(buf))).catch(() => {});
-    // Compress for API if needed
-    if (file.size > API_MAX_SIZE) {
-      compressImage(file).then(({ base64, mime }) => {
-        setImageBase64(base64);
-        setImageMime(mime);
-      });
-    } else {
-      setImageMime(file.type);
-      const reader = new FileReader();
-      reader.onload = (e) => setImageBase64((e.target?.result as string).split(",")[1]);
-      reader.readAsDataURL(file);
-    }
+    // Always compress for API to avoid Vercel payload limits.
+    compressImage(file).then(({ base64, mime }) => {
+      setImageBase64(base64);
+      setImageMime(mime);
+    });
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -322,13 +342,20 @@ export default function AnalyzerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64, mimeType: imageMime }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        if (res.status === 413) throw new Error("Image too large for server request limit.");
+        throw new Error();
+      }
       const data: LightroomResult = await res.json();
       setAnalyzeResult(data);
       // Use full style summary as preset name
       setPresetName(data.style_summary || "My Preset");
-    } catch {
-      setAnalyzeError("Failed to analyze image. Please try again.");
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : "Failed to analyze image. Please try again.";
+      setAnalyzeError(msg);
     }
     setAnalyzeLoading(false);
   };
