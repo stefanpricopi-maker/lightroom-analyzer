@@ -7,8 +7,41 @@ import { extractExif, readFileAsBuffer } from "@/app/lib/exif";
 import type { LightroomResult } from "@/app/lib/types";
 import type { BatchItem, SceneGroup } from "@/app/lib/batchTypes";
 import { compressToBase64 } from "@/app/lib/imageUtils";
+import { toast } from "@/app/lib/toast";
 
 const CONCURRENCY = 3;
+
+class RateLimitError extends Error {
+  retryAfterSeconds: number;
+  constructor(retryAfterSeconds: number) {
+    super("RATE_LIMIT");
+    this.name = "RateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterSeconds(res: Response, body: unknown): number | null {
+  const header = res.headers.get("retry-after");
+  if (header) {
+    const n = Number(header);
+    if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+  }
+
+  if (body && typeof body === "object") {
+    const ra = (body as { retryAfter?: unknown }).retryAfter;
+    if (typeof ra === "number" && Number.isFinite(ra) && ra > 0) return Math.ceil(ra);
+    if (typeof ra === "string") {
+      const n = Number(ra);
+      if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+    }
+  }
+
+  return null;
+}
 
 function buildExifHint(file: File): Promise<string> {
   return readFileAsBuffer(file).then((buf) => {
@@ -28,7 +61,14 @@ async function callBatchAnalyze(base64: string, mime: string, exifHint: string) 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageBase64: base64, mimeType: mime, exifHint }),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 429) {
+      const secs = parseRetryAfterSeconds(res, body) ?? 60;
+      throw new RateLimitError(secs);
+    }
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+  }
   return res.json() as Promise<{
     exposure: number; contrast: number; highlights: number;
     shadows: number; whites: number; blacks: number; reasoning: string;
@@ -49,6 +89,7 @@ export function useBatchQueue() {
   const { state, dispatch } = useBatch();
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef(false);
+  const pauseUntilRef = useRef(0);
 
   // Aggregate stats across all groups
   const stats: QueueStats = (() => {
@@ -66,6 +107,40 @@ export function useBatchQueue() {
     };
   })();
 
+  const processItemOnce = useCallback(async (item: BatchItem, group: SceneGroup) => {
+    if (!group.heroResult) return;
+
+    // If a previous worker hit a 429, all workers should pause together.
+    while (Date.now() < pauseUntilRef.current) {
+      if (abortRef.current) {
+        dispatch({ type: "SET_ITEM_STATUS", groupId: group.id, itemId: item.id, status: "waiting" });
+        return;
+      }
+      await sleep(250);
+    }
+
+    const [{ base64, mime }, exifHint] = await Promise.all([
+      compressToBase64(item.file),
+      buildExifHint(item.file),
+    ]);
+    const lightResult = await callBatchAnalyze(base64, mime, exifHint);
+    const photoResult: LightroomResult = {
+      ...group.heroResult,
+      style_summary: lightResult.reasoning,
+      confidence: "high",
+      light: {
+        exposure: lightResult.exposure,
+        contrast: lightResult.contrast,
+        highlights: lightResult.highlights,
+        shadows: lightResult.shadows,
+        whites: lightResult.whites,
+        blacks: lightResult.blacks,
+      },
+    };
+    const merged = mergeHeroWithPhoto(group.heroResult, photoResult);
+    dispatch({ type: "SET_ITEM_RESULT", groupId: group.id, itemId: item.id, result: photoResult, merged });
+  }, [dispatch]);
+
   // Process a single item within its group
   const processItem = useCallback(async (
     item: BatchItem,
@@ -74,30 +149,22 @@ export function useBatchQueue() {
     if (!group.heroResult) return;
     dispatch({ type: "SET_ITEM_STATUS", groupId: group.id, itemId: item.id, status: "analyzing" });
     try {
-      const [{ base64, mime }, exifHint] = await Promise.all([
-        compressToBase64(item.file),
-        buildExifHint(item.file),
-      ]);
-      const lightResult = await callBatchAnalyze(base64, mime, exifHint);
-      const photoResult: LightroomResult = {
-        ...group.heroResult,
-        style_summary: lightResult.reasoning,
-        confidence: "high",
-        light: {
-          exposure: lightResult.exposure,
-          contrast: lightResult.contrast,
-          highlights: lightResult.highlights,
-          shadows: lightResult.shadows,
-          whites: lightResult.whites,
-          blacks: lightResult.blacks,
-        },
-      };
-      const merged = mergeHeroWithPhoto(group.heroResult, photoResult);
-      dispatch({ type: "SET_ITEM_RESULT", groupId: group.id, itemId: item.id, result: photoResult, merged });
+      await processItemOnce(item, group);
     } catch (err) {
+      if (err instanceof RateLimitError) {
+        const secs = err.retryAfterSeconds;
+        pauseUntilRef.current = Math.max(pauseUntilRef.current, Date.now() + secs * 1000);
+        toast.warning(`Rate limit reached — pausing for ${secs} seconds`);
+        dispatch({ type: "SET_ITEM_STATUS", groupId: group.id, itemId: item.id, status: "waiting" });
+        await sleep(secs * 1000);
+        // Retry automatically after the pause (without marking as error).
+        dispatch({ type: "SET_ITEM_STATUS", groupId: group.id, itemId: item.id, status: "analyzing" });
+        await processItemOnce({ ...item, status: "waiting" }, group);
+        return;
+      }
       dispatch({ type: "SET_ITEM_STATUS", groupId: group.id, itemId: item.id, status: "error", error: err instanceof Error ? err.message : "Analysis failed" });
     }
-  }, [dispatch]);
+  }, [dispatch, processItemOnce]);
 
   // Start queue — processes all waiting items across all groups that have a hero
   const startQueue = useCallback(async () => {

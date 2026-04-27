@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { parseAIResponse } from "@/app/lib/apiUtils";
+import { checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { DIFF_LIMIT } from "@/app/lib/rateLimitConfigs";
 
 const client = new Anthropic({
   defaultHeaders: {
@@ -51,6 +53,23 @@ Numeric value ranges: Exposure -5 to +5, all others -100 to +100, Temperature 20
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const limit = checkRateLimit(ip, DIFF_LIMIT);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
+        {
+          status: 429,
+          headers: {
+            "X-RateLimit-Limit": String(DIFF_LIMIT.maxRequests),
+            "X-RateLimit-Remaining": String(limit.remaining),
+            "X-RateLimit-Reset": String(limit.resetAt),
+            "Retry-After": String(limit.retryAfter),
+          },
+        }
+      );
+    }
+
     const { originalBase64, originalMime, editedBase64, editedMime } = await req.json();
 
     if (!originalBase64 || !editedBase64) {

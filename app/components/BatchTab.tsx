@@ -26,7 +26,7 @@ export function BatchTab() {
     try {
       const summary = await exportGroupsZip(state.groups);
       toast.success(`ZIP downloaded — ${summary.exported} presets included`);
-    } catch (err) {
+    } catch {
       toast.error("Export failed. Please try again.");
     }
     setExporting(false);

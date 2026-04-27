@@ -3,6 +3,8 @@ import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { LIGHTROOM_SYSTEM_PROMPT } from "@/app/lib/prompt";
 import { parseAIResponse, validatePayload } from "@/app/lib/apiUtils";
+import { checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { ANALYZE_LIMIT } from "@/app/lib/rateLimitConfigs";
 
 type AllowedMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
@@ -25,6 +27,23 @@ const client = new Anthropic({
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const limit = checkRateLimit(ip, ANALYZE_LIMIT);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
+        {
+          status: 429,
+          headers: {
+            "X-RateLimit-Limit": String(ANALYZE_LIMIT.maxRequests),
+            "X-RateLimit-Remaining": String(limit.remaining),
+            "X-RateLimit-Reset": String(limit.resetAt),
+            "Retry-After": String(limit.retryAfter),
+          },
+        }
+      );
+    }
+
     const contentType = req.headers.get("content-type") ?? "";
 
     let imageBase64: string | null = null;

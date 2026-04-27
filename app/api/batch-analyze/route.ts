@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { parseAIResponse, validatePayload } from "@/app/lib/apiUtils";
+import { checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { BATCH_LIMIT } from "@/app/lib/rateLimitConfigs";
 
 // Prompt caching is most impactful here — this route is called once per photo
 // in a batch of potentially 500 images. Caching saves ~90% of prompt tokens
@@ -43,6 +45,23 @@ export interface BatchLightResult {
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const limit = checkRateLimit(ip, BATCH_LIMIT);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
+        {
+          status: 429,
+          headers: {
+            "X-RateLimit-Limit": String(BATCH_LIMIT.maxRequests),
+            "X-RateLimit-Remaining": String(limit.remaining),
+            "X-RateLimit-Reset": String(limit.resetAt),
+            "Retry-After": String(limit.retryAfter),
+          },
+        }
+      );
+    }
+
     const { imageBase64, mimeType, exifHint } = await req.json();
 
     if (!imageBase64 || !mimeType) {

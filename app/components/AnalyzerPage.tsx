@@ -23,6 +23,25 @@ import {
 
 type Tab = "analyze" | "diff" | "batch" | "critique";
 
+function parseRetryAfterSeconds(res: Response, body: unknown): number | null {
+  const header = res.headers.get("retry-after");
+  if (header) {
+    const n = Number(header);
+    if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+  }
+
+  if (body && typeof body === "object") {
+    const ra = (body as { retryAfter?: unknown }).retryAfter;
+    if (typeof ra === "number" && Number.isFinite(ra) && ra > 0) return Math.ceil(ra);
+    if (typeof ra === "string") {
+      const n = Number(ra);
+      if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+    }
+  }
+
+  return null;
+}
+
 // ─── Upload slot (reusable) ──────────────────────────────────────────────────
 function UploadSlot({
   label, image, onFile,
@@ -230,6 +249,12 @@ export default function AnalyzerPage() {
         })(),
       });
       if (!res.ok) {
+        if (res.status === 429) {
+          const body = await res.json().catch(() => null);
+          const secs = parseRetryAfterSeconds(res, body) ?? 60;
+          toast.warning(`Rate limit reached. Please wait ${secs} seconds before trying again.`);
+          return;
+        }
         if (res.status === 413) throw new Error("Image too large for server request limit.");
         throw new Error();
       }
@@ -260,7 +285,15 @@ export default function AnalyzerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ originalBase64: origBase64, originalMime: origMime, editedBase64: editBase64, editedMime: editMime }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        if (res.status === 429) {
+          const body = await res.json().catch(() => null);
+          const secs = parseRetryAfterSeconds(res, body) ?? 60;
+          toast.warning(`Rate limit reached. Please wait ${secs} seconds before trying again.`);
+          return;
+        }
+        throw new Error();
+      }
       const data: LightroomResult = await res.json();
       setDiffResult(data);
       setEditedResult(data);
