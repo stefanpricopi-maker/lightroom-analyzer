@@ -6,6 +6,7 @@ import { mergeHeroWithPhoto } from "@/app/lib/batchMerge";
 import { extractExif, readFileAsBuffer } from "@/app/lib/exif";
 import type { LightroomResult } from "@/app/lib/types";
 import type { BatchItem, SceneGroup } from "@/app/lib/batchTypes";
+import { compressToBase64 } from "@/app/lib/imageUtils";
 
 const CONCURRENCY = 3;
 
@@ -19,27 +20,6 @@ function buildExifHint(file: File): Promise<string> {
     if (exif.focalLength)  parts.push(exif.focalLength);
     return parts.join(", ");
   }).catch(() => "");
-}
-
-async function compressToBase64(file: File): Promise<{ base64: string; mime: string }> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const canvas = document.createElement("canvas");
-      const MAX_DIM = 2400;
-      let { width, height } = img;
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
-        else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
-      }
-      canvas.width = width; canvas.height = height;
-      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
-      resolve({ base64: canvas.toDataURL("image/jpeg", 0.85).split(",")[1], mime: "image/jpeg" });
-    };
-    img.src = url;
-  });
 }
 
 async function callBatchAnalyze(base64: string, mime: string, exifHint: string) {

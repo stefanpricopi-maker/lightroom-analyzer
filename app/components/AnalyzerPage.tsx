@@ -12,132 +12,15 @@ import { PresetLibrary } from "@/app/components/ui/PresetLibrary";
 import { ThemeToggle } from "@/app/components/ui/ThemeToggle";
 import { BatchTab } from "@/app/components/BatchTab";
 import { BatchProvider } from "@/app/lib/batchContext";
+import { CritiqueTab } from "@/app/components/CritiqueTab";
+import { ResultsPanel } from "@/app/components/ResultsPanel";
 import {
   LightPanel, ColorPanel, HSLPanel_Wrapped,
   ColorGradingPanel, DetailPanel, EffectsPanel, CalibrationPanel,
   setIn,
 } from "@/app/components/panels/Panels";
 
-type Tab = "analyze" | "diff" | "batch";
-
-// ─── Shared results panel ────────────────────────────────────────────────────
-function ResultsPanel({
-  result, editedResult, onUpdate, onResetAll, loading, presetName, setPresetName, savedMsg, onSave, onDownload, image, imageBase64,
-  selectedCollection, setSelectedCollection, collectionNames,
-}: {
-  result: LightroomResult | null;
-  editedResult: LightroomResult | null;
-  onUpdate: (path: string[], value: number) => void;
-  onResetAll: () => void;
-  loading: boolean;
-  presetName: string;
-  setPresetName: (v: string) => void;
-  savedMsg: boolean;
-  onSave: () => void;
-  onDownload: () => void;
-  image: string | null;
-  imageBase64: string | null;
-  selectedCollection: string;
-  setSelectedCollection: (v: string) => void;
-  collectionNames: string[];
-}) {
-  if (loading) return <ResultsSkeleton />;
-
-  if (!result) return (
-    <div className="rounded-2xl border flex flex-col items-center justify-center h-[400px] text-center gap-4" style={{background:"var(--surface)",borderColor:"var(--border)"}}>
-      <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{background:"var(--bg)"}}>
-        <span className="text-3xl" style={{color:"var(--border)"}}>◈</span>
-      </div>
-      <div>
-        <p className="font-syne font-semibold text-[14px]" style={{color:"var(--text-3)"}}>No analysis yet</p>
-        <p className="font-mono text-[11px] mt-1" style={{color:"var(--text-4)"}}>Upload a photo and hit Analyze</p>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="rounded-2xl border overflow-y-auto" style={{background:"var(--surface)",borderColor:"var(--border)",maxHeight:"85vh"}}>
-      {/* Sticky header — stays visible while scrolling panels */}
-      <div
-        className="px-5 pt-5 pb-4 border-b"
-        style={{
-          borderColor: "var(--border-2)",
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          background: "var(--surface)",
-        }}
-      >
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#f0fdf4] border border-[#bbf7d0] font-mono text-[10px] tracking-[0.1em] uppercase text-[#16a34a] mb-3">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
-          {result.confidence} confidence
-        </div>
-        {result.style_summary && (
-          <p className="font-mono text-[12px] leading-relaxed italic" style={{color:"var(--text-2)"}}>
-            "{result.style_summary}"
-          </p>
-        )}
-      </div>
-
-      <div className="px-5 py-4 border-b" style={{background:"var(--surface-2)",borderColor:"var(--border-2)"}}>
-        <p className="font-mono text-[10px] uppercase tracking-[0.15em] mb-3" style={{color:"var(--text-3)"}}>Save & Export</p>
-        <textarea
-          value={presetName}
-          onChange={(e) => setPresetName(e.target.value)}
-          placeholder="Preset name..."
-          rows={2}
-          className="w-full border rounded-lg px-3 py-2 font-mono text-[12px] outline-none transition-colors mb-2 resize-none leading-relaxed" style={{background:"var(--input-bg)",borderColor:"var(--border)",color:"var(--text-1)"}}
-        />
-        <select
-          value={selectedCollection}
-          onChange={(e) => setSelectedCollection(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2 font-mono text-[12px] outline-none transition-colors mb-2 cursor-pointer" style={{background:"var(--input-bg)",borderColor:"var(--border)",color:"var(--text-2)"}}
-        >
-          {collectionNames.map((name) => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
-        <div className="flex gap-2">
-          <button onClick={onSave} className="flex-1 px-3 py-2.5 border font-mono text-[11px] rounded-lg transition-colors flex items-center justify-center gap-1.5" style={{background:"var(--surface)",borderColor:"var(--border)",color:"var(--text-2)"}}>
-            {savedMsg ? "✓ Saved!" : "◫  Save to Library"}
-          </button>
-          <button onClick={onDownload} className="flex-1 px-3 py-2.5 font-mono text-[11px] rounded-lg transition-colors flex items-center justify-center gap-1.5" style={{background:"var(--text-1)",color:"var(--bg)"}}>
-            ↓ Download .xmp
-          </button>
-        </div>
-
-        <p className="font-mono text-[10px] mt-2" style={{color:"var(--text-4)"}}>
-          Lightroom → Develop → Presets → right-click → Import Presets
-        </p>
-      </div>
-
-      {/* Reset all bar */}
-      {editedResult && result && JSON.stringify(editedResult) !== JSON.stringify(result) && (
-        <div className="px-5 py-3 border-b flex items-center justify-between gap-3" style={{background:"var(--surface-2)",borderColor:"var(--border-2)"}}>
-          <p className="font-mono text-[11px] text-[#c07040] flex items-center gap-1.5">
-            <span>✦</span>
-            <span>You have unsaved slider changes</span>
-          </p>
-          <button
-            onClick={onResetAll}
-            className="flex-shrink-0 px-3 py-1.5 font-mono text-[11px] rounded-lg transition-colors" style={{background:"var(--surface)",border:"1px solid var(--accent)",color:"var(--accent)"}}
-          >
-            ↺ Reset to AI values
-          </button>
-        </div>
-      )}
-      <div className="px-5 py-2">
-        <LightPanel data={editedResult?.light ?? result.light} original={result.light} onUpdate={onUpdate} />
-        <ColorPanel data={editedResult?.color ?? result.color} original={result.color} onUpdate={onUpdate} />
-        <HSLPanel_Wrapped data={editedResult?.hsl ?? result.hsl} original={result.hsl} onUpdate={onUpdate} />
-        <ColorGradingPanel data={editedResult?.color_grading ?? result.color_grading} original={result.color_grading} onUpdate={onUpdate} />
-        <DetailPanel data={editedResult?.detail ?? result.detail} original={result.detail} onUpdate={onUpdate} />
-        <EffectsPanel data={editedResult?.effects ?? result.effects} original={result.effects} onUpdate={onUpdate} />
-        <CalibrationPanel data={editedResult?.calibration ?? result.calibration} original={result.calibration} onUpdate={onUpdate} />
-      </div>
-    </div>
-  );
-}
+type Tab = "analyze" | "diff" | "batch" | "critique";
 
 // ─── Upload slot (reusable) ──────────────────────────────────────────────────
 function UploadSlot({
@@ -201,8 +84,8 @@ export default function AnalyzerPage() {
 
   // Analyze tab state
   const [image, setImage] = useState<string | null>(null);
-  const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imageMime, setImageMime] = useState<string | null>(null);
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [dragging, setDragging] = useState(false);
   const [analyzeResult, setAnalyzeResult] = useState<LightroomResult | null>(null);
   const [editedResult, setEditedResult] = useState<LightroomResult | null>(null);
@@ -211,6 +94,7 @@ export default function AnalyzerPage() {
   const [loadedFromLibrary, setLoadedFromLibrary] = useState(false);
   const [exifData, setExifData] = useState<ExifData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
 
   // Diff tab state
   const [origImage, setOrigImage] = useState<string | null>(null);
@@ -242,63 +126,62 @@ export default function AnalyzerPage() {
   };
 
   const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — allow large files, we compress before API
-  // Vercel has a fairly small request body limit; base64 adds ~33% overhead.
-  // Keep the base64 payload comfortably under typical serverless limits.
-  const API_MAX_BYTES = 2.5 * 1024 * 1024; // ~2.5MB binary target
+  // Vercel request body limits are tight, and base64 adds ~33% overhead.
+  // Target a small payload to avoid 413s even for high-res uploads.
+  const API_MAX_BYTES = 900 * 1024; // ~0.9MB binary target
 
-  // Compress image to target size using canvas
-  const compressImage = (file: File): Promise<{ base64: string; mime: string }> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d")!;
+  // Compress image to target size using canvas (returns a JPEG Blob)
+  const compressImage = async (file: File): Promise<{ blob: Blob; mime: string }> => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
 
-        // Start reasonably large, then adapt until under size.
-        let maxDim = 2000;
-        let quality = 0.82;
-
-        const encode = () => canvas.toDataURL("image/jpeg", quality).split(",")[1];
-        const base64ToBytes = (b64: string) => b64.length * 0.75;
-
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          let { width, height } = img;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          ctx.clearRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-
-          const base64 = encode();
-          if (base64ToBytes(base64) <= API_MAX_BYTES) {
-            resolve({ base64, mime: "image/jpeg" });
-            return;
-          }
-
-          // Too big: first reduce quality, then dimensions.
-          if (quality > 0.55) quality = Math.max(0.55, quality - 0.08);
-          else if (maxDim > 1200) maxDim = Math.max(1200, Math.round(maxDim * 0.85));
-          else {
-            // Hard fallback: return best effort (still may fail on server, but avoids infinite loop)
-            resolve({ base64, mime: "image/jpeg" });
-            return;
-          }
-        }
-      };
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Failed to load image for compression"));
       img.src = url;
     });
+
+    URL.revokeObjectURL(url);
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+
+    let maxDim = 1800;
+    let quality = 0.82;
+
+    const toJpegBlob = () =>
+      new Promise<Blob>((resolve) => {
+        canvas.toBlob((b) => resolve(b ?? new Blob()), "image/jpeg", quality);
+      });
+
+    for (let i = 0; i < 10; i++) {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const blob = await toJpegBlob();
+      if (blob.size <= API_MAX_BYTES) return { blob, mime: "image/jpeg" };
+
+      if (quality > 0.45) quality = Math.max(0.45, quality - 0.1);
+      else if (maxDim > 900) maxDim = Math.max(900, Math.round(maxDim * 0.85));
+      else return { blob, mime: "image/jpeg" };
+    }
+
+    // Best effort fallback
+    const blob = await toJpegBlob();
+    return { blob, mime: "image/jpeg" };
   };
 
   const processFile = (file: File) => {
@@ -319,8 +202,8 @@ export default function AnalyzerPage() {
     // Extract EXIF from original file before any compression
     readFileAsBuffer(file).then((buf) => setExifData(extractExif(buf))).catch(() => {});
     // Always compress for API to avoid Vercel payload limits.
-    compressImage(file).then(({ base64, mime }) => {
-      setImageBase64(base64);
+    compressImage(file).then(({ blob, mime }) => {
+      setImageBlob(blob);
       setImageMime(mime);
     });
   };
@@ -333,14 +216,18 @@ export default function AnalyzerPage() {
 
   // ── Analyze ──
   const analyze = async () => {
-    if (!imageBase64 || !imageMime) return;
+    if (!imageBlob || !imageMime) return;
     setAnalyzeLoading(true);
     setAnalyzeError(null);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64, mimeType: imageMime }),
+        body: (() => {
+          const fd = new FormData();
+          fd.append("image", imageBlob, "photo.jpg");
+          fd.append("mimeType", imageMime);
+          return fd;
+        })(),
       });
       if (!res.ok) {
         if (res.status === 413) throw new Error("Image too large for server request limit.");
@@ -359,6 +246,7 @@ export default function AnalyzerPage() {
     }
     setAnalyzeLoading(false);
   };
+
 
   // ── Diff ──
   const diff = async () => {
@@ -410,8 +298,8 @@ export default function AnalyzerPage() {
     setEditedResult(preset.result);
     setPresetName(preset.name);
     setImage(null);
-    setImageBase64(null);
     setImageMime(null);
+    setImageBlob(null);
     setLoadedFromLibrary(true);
     setExifData(null);
     setTab("analyze");
@@ -467,6 +355,7 @@ export default function AnalyzerPage() {
         <div className="inline-flex border rounded-xl p-1 gap-1" style={{background:"var(--surface)",borderColor:"var(--border)"}}>
           {([
             { id: "analyze", label: "◎  Analyze Photo" },
+            { id: "critique", label: "◎  Photo Critique" },
             { id: "diff",    label: "⇄  Edit Difference" },
             { id: "batch",   label: "⊞  Batch Event Mode" },
           ] as { id: Tab; label: string }[]).map(({ id, label }) => (
@@ -489,6 +378,8 @@ export default function AnalyzerPage() {
       <div className="max-w-[1200px] mx-auto px-6 pb-20">
         {tab === "batch" ? (
           <BatchProvider><BatchTab /></BatchProvider>
+        ) : tab === "critique" ? (
+          <CritiqueTab />
         ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
@@ -543,7 +434,7 @@ export default function AnalyzerPage() {
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} />
                 <button
-                  disabled={!image || analyzeLoading || !imageBase64}
+                  disabled={!image || analyzeLoading || !imageBlob}
                   onClick={analyze}
                   className="w-full py-4 font-syne font-bold text-[13px] tracking-[0.08em] uppercase rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-3" style={{background:"var(--text-1)",color:"var(--bg)"}}
                 >
@@ -554,7 +445,7 @@ export default function AnalyzerPage() {
                   )}
                 </button>
                 {analyzeError && <div className="p-3 rounded-lg text-[12px] font-mono" style={{background:"rgba(220,50,50,0.08)",border:"1px solid rgba(220,50,50,0.25)",color:"#e05050"}}>{analyzeError}</div>}
-                {analyzeResult && image && imageBase64 && <BeforeAfter image={image} result={editedResult ?? analyzeResult} />}
+                {analyzeResult && image && <BeforeAfter image={image} result={editedResult ?? analyzeResult} />}
               </>
             )}
 
@@ -617,7 +508,6 @@ export default function AnalyzerPage() {
             onSave={handleSave}
             onDownload={() => (activeEditedResult ?? activeResult) && downloadXMP(activeEditedResult ?? activeResult!, presetName || "My Preset")}
             image={activeImage}
-            imageBase64={tab === "analyze" ? imageBase64 : editBase64}
             selectedCollection={selectedCollection}
             setSelectedCollection={setSelectedCollection}
             collectionNames={collectionNames}

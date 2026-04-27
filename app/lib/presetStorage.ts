@@ -1,4 +1,5 @@
 import type { LightroomResult } from "@/app/lib/types";
+import { generateThumbnail as generateThumbnailFromUtils } from "@/app/lib/imageUtils";
 
 export interface SavedPreset {
   id: string;
@@ -89,20 +90,5 @@ export const DEFAULT_COLLECTION_NAME = DEFAULT_COLLECTION;
 // ── Thumbnail ────────────────────────────────────────────────────────────────
 
 export function generateThumbnail(imageSrc: string): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const size = 120;
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
-      const min = Math.min(img.width, img.height);
-      const sx = (img.width - min) / 2;
-      const sy = (img.height - min) / 2;
-      ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-      resolve(canvas.toDataURL("image/jpeg", 0.7));
-    };
-    img.src = imageSrc;
-  });
+  return generateThumbnailFromUtils(imageSrc);
 }

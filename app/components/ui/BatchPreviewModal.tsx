@@ -2,30 +2,13 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { LightroomResult } from "@/app/lib/types";
+import { buildFilterString } from "@/app/lib/imageUtils";
 
 interface BatchPreviewModalProps {
   thumbnail: string;
   filename: string;
   heroResult: LightroomResult;
   onClose: () => void;
-}
-
-function buildFilterString(result: LightroomResult): string {
-  const { light, color } = result;
-  const brightness = 1 + light.exposure * 0.15;
-  const contrast = 1 + light.contrast * 0.008;
-  const saturation = 1 + color.saturation * 0.01 + color.vibrance * 0.005;
-  const tempShift = (color.temperature - 5500) / 5500;
-  const hueRotate = tempShift * -15 + color.tint * 0.1;
-  const highlightAdj = 1 + light.highlights * 0.002;
-  const shadowAdj = 1 + light.shadows * 0.002;
-  const combinedBrightness = brightness * highlightAdj * shadowAdj;
-  return [
-    `brightness(${combinedBrightness.toFixed(3)})`,
-    `contrast(${contrast.toFixed(3)})`,
-    `saturate(${Math.max(0, saturation).toFixed(3)})`,
-    `hue-rotate(${hueRotate.toFixed(1)}deg)`,
-  ].join(" ");
 }
 
 function BeforeAfterSlider({ image, filterString }: { image: string; filterString: string }) {

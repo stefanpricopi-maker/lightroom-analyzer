@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
+import { parseAIResponse, validatePayload } from "@/app/lib/apiUtils";
 
 // Prompt caching is most impactful here — this route is called once per photo
 // in a batch of potentially 500 images. Caching saves ~90% of prompt tokens
@@ -47,28 +49,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing imageBase64 or mimeType" }, { status: 400 });
     }
 
-    const MAX_BASE64_SIZE = 14 * 1024 * 1024;
-    if (imageBase64.length > MAX_BASE64_SIZE) {
-      return NextResponse.json({ error: "Image too large. Maximum size is 10MB." }, { status: 413 });
-    }
+    const invalid = validatePayload(imageBase64);
+    if (invalid) return invalid;
 
     // Build the dynamic EXIF hint as a separate user message block (not cached)
     const exifContext = exifHint
       ? `Camera settings for this photo: ${exifHint}. Use this to inform your exposure estimate — high ISO suggests noise/underexposure, wide aperture suggests shallow DOF, fast shutter indicates bright conditions.`
       : "No EXIF data available for this photo.";
 
+    const systemBlock: TextBlockParam = {
+      type: "text",
+      text: BATCH_SYSTEM_PROMPT,
+      cache_control: { type: "ephemeral" },
+    };
+
     const response = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 300,
       // Static system prompt cached — the EXIF hint varies per photo so it stays in the user turn
-      // @ts-ignore — cache_control is valid with prompt-caching-2024-07-31 beta
-      system: [
-        {
-          type: "text",
-          text: BATCH_SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
+      system: [systemBlock],
       messages: [
         {
           role: "user",
@@ -86,8 +85,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    const text = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-    const clean = text.replace(/```json|```/g, "").replace(/:\s*\+(\d)/g, ": $1").trim();
+    const clean = parseAIResponse(response.content);
     const result: BatchLightResult = JSON.parse(clean);
     return NextResponse.json(result);
   } catch (err) {

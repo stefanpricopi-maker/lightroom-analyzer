@@ -15,10 +15,14 @@ interface SliderProps {
 
 export function Slider({ label, value, originalValue, min, max, unit = "", step = 1, onChange }: SliderProps) {
   const percent = ((value - min) / (max - min)) * 100;
-  const midPercent = ((0 - min) / (max - min)) * 100;
-  const isNegative = value < 0;
-  const fillLeft = isNegative ? percent : midPercent;
-  const fillWidth = Math.abs(percent - midPercent);
+  const zeroInRange = min <= 0 && max >= 0;
+  const midPercent = zeroInRange ? ((0 - min) / (max - min)) * 100 : 0;
+  const isNegative = zeroInRange ? value < 0 : false;
+  const fillLeft = zeroInRange ? (isNegative ? percent : midPercent) : 0;
+  const fillWidth = zeroInRange ? Math.abs(percent - midPercent) : Math.max(0, percent);
+  const THUMB_RADIUS_PX = 6; // matches 12px thumb
+  const clampLeft = (p: number) =>
+    `clamp(${THUMB_RADIUS_PX}px, ${p}%, calc(100% - ${THUMB_RADIUS_PX}px))`;
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const isModified = originalValue !== undefined && value !== originalValue && !!onChange;
@@ -56,7 +60,7 @@ export function Slider({ label, value, originalValue, min, max, unit = "", step 
           {isModified && originalValue !== undefined && (
             <div
               className="absolute w-[2px] h-[6px] rounded-full top-1/2"
-              style={{ left: `${((originalValue - min) / (max - min)) * 100}%`, transform: "translateX(-50%) translateY(-50%)", background: "var(--accent)", opacity: 0.4 }}
+              style={{ left: clampLeft(((originalValue - min) / (max - min)) * 100), transform: "translateX(-50%) translateY(-50%)", background: "var(--accent)", opacity: 0.4 }}
             />
           )}
           <div
@@ -67,7 +71,7 @@ export function Slider({ label, value, originalValue, min, max, unit = "", step 
         <div
           className={`absolute w-[12px] h-[12px] rounded-full top-1/2 -translate-x-1/2 -translate-y-1/2 ${onChange ? "hover:scale-110" : ""}`}
           style={{
-            left: `${percent}%`,
+            left: clampLeft(percent),
             background: isModified ? "var(--accent)" : "var(--surface)",
             border: `2px solid ${isModified ? "var(--accent)" : "var(--text-1)"}`,
             transition: "transform 0.1s",
@@ -80,7 +84,7 @@ export function Slider({ label, value, originalValue, min, max, unit = "", step 
           <button onClick={() => onChange?.(originalValue!)} title="Reset to AI value" className="text-[9px] transition-opacity hover:opacity-70" style={{ color: "var(--accent)" }}>↺</button>
         )}
         <span className="text-[11px] font-mono text-right" style={{ color: isModified ? "var(--accent)" : isNegative ? "var(--accent)" : value > 0 ? "var(--text-1)" : "var(--text-4)" }}>
-          {value > 0 ? `+${value}` : value}{unit}
+          {zeroInRange && value > 0 ? `+${value}` : value}{unit}
         </span>
       </div>
     </div>

@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
+import { parseAIResponse } from "@/app/lib/apiUtils";
 
 const client = new Anthropic({
   defaultHeaders: {
@@ -55,18 +57,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing images" }, { status: 400 });
     }
 
+    const systemBlock: TextBlockParam = {
+      type: "text",
+      text: DIFF_SYSTEM_PROMPT,
+      cache_control: { type: "ephemeral" },
+    };
+
     const response = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 1500,
       // System prompt cached — saves tokens on every diff request
-      // @ts-ignore — cache_control is valid with prompt-caching-2024-07-31 beta
-      system: [
-        {
-          type: "text",
-          text: DIFF_SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
+      system: [systemBlock],
       messages: [
         {
           role: "user",
@@ -81,8 +82,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    const text = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-    const clean = text.replace(/```json|```/g, "").replace(/:\s*\+(\d)/g, ": $1").trim();
+    const clean = parseAIResponse(response.content);
     const result = JSON.parse(clean);
     return NextResponse.json(result);
   } catch (err) {
