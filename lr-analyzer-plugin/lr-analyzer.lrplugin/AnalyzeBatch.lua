@@ -70,7 +70,8 @@ end
 local function postBatchAnalyzeFile(jpegPath, mimeType, exifHint)
   local url = VERCEL_BASE_URL .. "/api/batch-analyze"
 
-  local ok, resBodyOrErr = pcall(function()
+  -- Lightroom 5.x: LrHttp yields internally, so use LrTasks.pcall (yield-safe).
+  local ok, resBodyOrErr = LrTasks.pcall(function()
     return LrHttp.postMultipart(url, {
       {
         name = "image",

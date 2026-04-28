@@ -69,7 +69,9 @@ local function postAnalyzeFile(jpegPath, mimeType, progressScope)
 
   progressScope:setCaption("Contacting LR Analyzer…")
 
-  local ok, resBodyOrErr = pcall(function()
+  -- Lightroom 5.x: LrHttp yields internally, so wrapping it in plain pcall triggers:
+  -- "Yielding is not allowed within a C or metamethod call".
+  local ok, resBodyOrErr = LrTasks.pcall(function()
     return LrHttp.postMultipart(url, {
       {
         name = "image",
