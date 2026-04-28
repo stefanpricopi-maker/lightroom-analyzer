@@ -165,7 +165,7 @@ local function applyDevelopSettings(photo, result)
   -- Apply. Prefer develop settings application when available; fall back to raw metadata.
   -- Some Lightroom versions may not support all keys through setRawMetadata.
   local catalog = LrApplication.activeCatalog()
-  catalog:withWriteAccessDo("LR Analyzer: Apply Develop Settings", function()
+  local status = catalog:withWriteAccessDo("LR Analyzer: Apply Develop Settings", function()
     if photo.applyDevelopSettings then
       photo:applyDevelopSettings(settings)
     else
@@ -175,7 +175,11 @@ local function applyDevelopSettings(photo, result)
         end
       end
     end
-  end)
+  end, { timeout = 30 })
+
+  if status == "aborted" then
+    error("Write access timed out while applying develop settings.")
+  end
 end
 
 LrTasks.startAsyncTask(function()

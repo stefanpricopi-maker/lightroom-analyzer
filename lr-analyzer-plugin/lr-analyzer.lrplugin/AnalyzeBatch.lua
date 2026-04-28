@@ -115,7 +115,7 @@ local function applyLightOnly(photo, payload)
   }
 
   local catalog = LrApplication.activeCatalog()
-  catalog:withWriteAccessDo("LR Analyzer: Apply Light (Batch)", function()
+  local status = catalog:withWriteAccessDo("LR Analyzer: Apply Light (Batch)", function()
     if photo.applyDevelopSettings then
       photo:applyDevelopSettings(settings)
     else
@@ -125,7 +125,11 @@ local function applyLightOnly(photo, payload)
         end
       end
     end
-  end)
+  end, { timeout = 30 })
+
+  if status == "aborted" then
+    error("Write access timed out while applying Light settings.")
+  end
 end
 
 LrTasks.startAsyncTask(function()
