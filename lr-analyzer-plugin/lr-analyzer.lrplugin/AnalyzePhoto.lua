@@ -5,8 +5,9 @@ local LrFunctionContext = import "LrFunctionContext"
 local LrHttp = import "LrHttp"
 local LrExportSession = import "LrExportSession"
 local LrPathUtils = import "LrPathUtils"
-local LrJson = import "LrJson"
 local LrProgressScope = import "LrProgressScope"
+
+local JSON = require "JSON"
 
 local VERCEL_BASE_URL = "https://lightroom-analyzer.vercel.app"
 
@@ -90,7 +91,7 @@ local function postAnalyzeFile(jpegPath, mimeType, progressScope)
 
   local decoded
   local decodeOk, decodeErr = pcall(function()
-    decoded = LrJson.decode(resBody)
+    decoded = JSON.decode(resBody)
   end)
   if not decodeOk then
     return nil, "Failed to parse API JSON: " .. tostring(decodeErr)
