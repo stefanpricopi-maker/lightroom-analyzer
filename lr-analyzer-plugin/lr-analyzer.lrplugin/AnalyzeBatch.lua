@@ -170,7 +170,8 @@ LrTasks.startAsyncTask(function()
         goto continue
       end
 
-      local ok, applyErr = pcall(function()
+      -- Lightroom 5.x: write access may yield; use LrTasks.pcall (yield-safe).
+      local ok, applyErr = LrTasks.pcall(function()
         applyLightOnly(photo, payload)
       end)
       if not ok then

@@ -216,7 +216,8 @@ LrTasks.startAsyncTask(function()
     progress:setPortionComplete(0.8)
     progress:setCaption("Applying settings…")
 
-    local ok, applyErr = pcall(function()
+    -- Lightroom 5.x: write access may yield; use LrTasks.pcall (yield-safe).
+    local ok, applyErr = LrTasks.pcall(function()
       applyDevelopSettings(targetPhoto, result)
     end)
     if not ok then
