@@ -3,10 +3,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { LightroomResult } from "@/app/lib/types";
 import { downloadXMP } from "@/app/lib/xmp";
-import { savePreset, saveCollection, loadCollections, loadPresets, getAllCollectionNames, generateThumbnail, DEFAULT_COLLECTION_NAME, type SavedPreset } from "@/app/lib/presetStorage";
+import { savePreset, loadCollections, loadPresets, getAllCollectionNames, generateThumbnail, DEFAULT_COLLECTION_NAME, type SavedPreset } from "@/app/lib/presetStorage";
 import { BeforeAfter } from "@/app/components/ui/BeforeAfter";
 import { ExifBadge } from "@/app/components/ui/ExifBadge";
-import { ResultsSkeleton } from "@/app/components/ui/Skeleton";
 import { extractExif, readFileAsBuffer, type ExifData } from "@/app/lib/exif";
 import { PresetLibrary } from "@/app/components/ui/PresetLibrary";
 import { ThemeToggle } from "@/app/components/ui/ThemeToggle";
@@ -15,13 +14,14 @@ import { BatchProvider } from "@/app/lib/batchContext";
 import { CritiqueTab } from "@/app/components/CritiqueTab";
 import { ResultsPanel } from "@/app/components/ResultsPanel";
 import { toast } from "@/app/lib/toast";
-import {
-  LightPanel, ColorPanel, HSLPanel_Wrapped,
-  ColorGradingPanel, DetailPanel, EffectsPanel, CalibrationPanel,
-  setIn,
-} from "@/app/components/panels/Panels";
+import { setIn } from "@/app/components/panels/Panels";
 
 type Tab = "analyze" | "diff" | "batch" | "critique";
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — allow large files, we compress before API
+// Vercel request body limits are tight, and base64 adds ~33% overhead.
+// Target a small payload to avoid 413s even for high-res uploads.
+const API_MAX_BYTES = 900 * 1024; // ~0.9MB binary target
 
 function parseRetryAfterSeconds(res: Response, body: unknown): number | null {
   const header = res.headers.get("retry-after");
@@ -144,13 +144,8 @@ export default function AnalyzerPage() {
     reader.readAsDataURL(file);
   };
 
-  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — allow large files, we compress before API
-  // Vercel request body limits are tight, and base64 adds ~33% overhead.
-  // Target a small payload to avoid 413s even for high-res uploads.
-  const API_MAX_BYTES = 900 * 1024; // ~0.9MB binary target
-
   // Compress image to target size using canvas (returns a JPEG Blob)
-  const compressImage = async (file: File): Promise<{ blob: Blob; mime: string }> => {
+  const compressImage = useCallback(async (file: File): Promise<{ blob: Blob; mime: string }> => {
     const img = new Image();
     const url = URL.createObjectURL(file);
 
@@ -201,9 +196,9 @@ export default function AnalyzerPage() {
     // Best effort fallback
     const blob = await toJpegBlob();
     return { blob, mime: "image/jpeg" };
-  };
+  }, []);
 
-  const processFile = (file: File) => {
+  const processFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
       setAnalyzeError("Please upload a valid image file (JPG, PNG, WEBP).");
       return;
@@ -225,13 +220,13 @@ export default function AnalyzerPage() {
       setImageBlob(blob);
       setImageMime(mime);
     });
-  };
+  }, [compressImage]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
     processFile(e.dataTransfer.files[0]);
-  }, []);
+  }, [processFile]);
 
   // ── Analyze ──
   const analyze = async () => {
@@ -467,6 +462,7 @@ export default function AnalyzerPage() {
                   )}
                 </div>
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} />
+                {exifData && <ExifBadge exif={exifData} />}
                 <button
                   disabled={!image || analyzeLoading || !imageBlob}
                   onClick={analyze}

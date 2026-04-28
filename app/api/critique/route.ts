@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { parseAIResponse, validatePayload } from "@/app/lib/apiUtils";
-import { checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
 import { CRITIQUE_LIMIT } from "@/app/lib/rateLimitConfigs";
 
 type AllowedMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
@@ -103,12 +103,7 @@ export async function POST(req: NextRequest) {
         { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
         {
           status: 429,
-          headers: {
-            "X-RateLimit-Limit": String(CRITIQUE_LIMIT.maxRequests),
-            "X-RateLimit-Remaining": String(limit.remaining),
-            "X-RateLimit-Reset": String(limit.resetAt),
-            "Retry-After": String(limit.retryAfter),
-          },
+          headers: buildRateLimitHeaders(CRITIQUE_LIMIT, limit),
         }
       );
     }

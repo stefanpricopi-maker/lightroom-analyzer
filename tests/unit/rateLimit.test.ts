@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import {
+  buildRateLimitHeaders,
   checkRateLimit,
   getClientIp,
   resetForTesting,
@@ -327,5 +328,35 @@ describe("Rate limit response fields (header mapping)", () => {
     checkRateLimit("10.4.0.5", cfg);
     const blocked = checkRateLimit("10.4.0.5", cfg);
     expect(blocked.retryAfter).toBeGreaterThanOrEqual(1);
+  });
+
+  it("buildRateLimitHeaders includes limit/remaining/reset", () => {
+    const cfg: RateLimitConfig = { windowMs: 60_000, maxRequests: 10 };
+    const headers = buildRateLimitHeaders(cfg, {
+      allowed: true,
+      remaining: 7,
+      resetAt: 123,
+    });
+    expect(headers["X-RateLimit-Limit"]).toBe("10");
+    expect(headers["X-RateLimit-Remaining"]).toBe("7");
+    expect(headers["X-RateLimit-Reset"]).toBe("123");
+  });
+
+  it("buildRateLimitHeaders includes Retry-After only when retryAfter exists", () => {
+    const cfg: RateLimitConfig = { windowMs: 60_000, maxRequests: 10 };
+    const allowedHeaders = buildRateLimitHeaders(cfg, {
+      allowed: true,
+      remaining: 9,
+      resetAt: 500,
+    });
+    expect(allowedHeaders["Retry-After"]).toBeUndefined();
+
+    const blockedHeaders = buildRateLimitHeaders(cfg, {
+      allowed: false,
+      remaining: 0,
+      resetAt: 600,
+      retryAfter: 42,
+    });
+    expect(blockedHeaders["Retry-After"]).toBe("42");
   });
 });

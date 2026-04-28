@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { parseAIResponse, validatePayload } from "@/app/lib/apiUtils";
-import { checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
 import { BATCH_LIMIT } from "@/app/lib/rateLimitConfigs";
 
 // Prompt caching is most impactful here — this route is called once per photo
@@ -52,12 +52,7 @@ export async function POST(req: NextRequest) {
         { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
         {
           status: 429,
-          headers: {
-            "X-RateLimit-Limit": String(BATCH_LIMIT.maxRequests),
-            "X-RateLimit-Remaining": String(limit.remaining),
-            "X-RateLimit-Reset": String(limit.resetAt),
-            "Retry-After": String(limit.retryAfter),
-          },
+          headers: buildRateLimitHeaders(BATCH_LIMIT, limit),
         }
       );
     }

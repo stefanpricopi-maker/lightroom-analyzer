@@ -15,12 +15,6 @@ function setIn<T extends object>(obj: T, path: string[], val: number): T {
   return { ...obj, [key]: setIn(obj[key] as object, path.slice(1), val) };
 }
 
-interface PanelProps {
-  data: LightroomResult[keyof LightroomResult];
-  original?: LightroomResult[keyof LightroomResult];
-  onUpdate?: (path: string[], value: number) => void;
-}
-
 function HSLPanel({
   hsl, originalHsl, onUpdate,
 }: {

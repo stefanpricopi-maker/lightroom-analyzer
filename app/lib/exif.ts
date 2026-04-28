@@ -92,7 +92,6 @@ export function extractExif(buffer: ArrayBuffer): ExifData {
 
   // APP1 segment found
   offset += 2; // skip marker
-  const segLength = view.getUint16(offset);
   offset += 2;
 
   // Check "Exif\0\0" header
