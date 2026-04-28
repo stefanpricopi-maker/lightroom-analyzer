@@ -7,6 +7,16 @@ import { checkRateLimitServer } from "@/app/lib/rateLimitServer";
 import { BATCH_LIMIT } from "@/app/lib/rateLimitConfigs";
 import { corsOptions, requireCorsAllowed, withCors } from "@/app/lib/cors";
 
+type AllowedMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
+function normalizeMimeType(mimeType: string | null): AllowedMimeType {
+  if (mimeType === "image/jpeg") return "image/jpeg";
+  if (mimeType === "image/png") return "image/png";
+  if (mimeType === "image/gif") return "image/gif";
+  if (mimeType === "image/webp") return "image/webp";
+  return "image/jpeg";
+}
+
 // Prompt caching is most impactful here — this route is called once per photo
 // in a batch of potentially 500 images. Caching saves ~90% of prompt tokens
 // on every call after the first within the 5-minute cache window.
@@ -67,11 +77,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { imageBase64, mimeType, exifHint } = await req.json();
+    const contentType = req.headers.get("content-type") ?? "";
+
+    let imageBase64: string | null = null;
+    let mimeType: string | null = null;
+    let exifHint: string | null = null;
+
+    if (contentType.includes("application/json")) {
+      const body = await req.json();
+      imageBase64 = body?.imageBase64 ?? null;
+      mimeType = body?.mimeType ?? null;
+      exifHint = body?.exifHint ?? null;
+    } else {
+      const form = await req.formData();
+      const file = form.get("image");
+      const mt = form.get("mimeType");
+      const hint = form.get("exifHint");
+      mimeType = typeof mt === "string" ? mt : null;
+      exifHint = typeof hint === "string" ? hint : null;
+
+      if (file instanceof Blob) {
+        const buf = Buffer.from(await file.arrayBuffer());
+        imageBase64 = buf.toString("base64");
+        if (!mimeType) mimeType = file.type || "image/jpeg";
+      }
+    }
 
     if (!imageBase64 || !mimeType) {
       return withCors(req, NextResponse.json({ error: "Missing imageBase64 or mimeType" }, { status: 400 }));
     }
+
+    const safeMimeType = normalizeMimeType(mimeType);
 
     const invalid = validatePayload(imageBase64);
     if (invalid) return withCors(req, invalid as NextResponse);
@@ -98,7 +134,7 @@ export async function POST(req: NextRequest) {
           content: [
             {
               type: "image",
-              source: { type: "base64", media_type: mimeType, data: imageBase64 },
+              source: { type: "base64", media_type: safeMimeType, data: imageBase64 },
             },
             {
               type: "text",

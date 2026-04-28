@@ -101,6 +101,10 @@ local function postBatchAnalyzeFile(jpegPath, mimeType, exifHint)
     return nil, "Failed to parse API JSON: " .. tostring(decodeErr)
   end
 
+  if type(decoded) == "table" and decoded.error then
+    return nil, tostring(decoded.error)
+  end
+
   return decoded
 end
 
