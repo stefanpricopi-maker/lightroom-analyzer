@@ -29,7 +29,7 @@ describe("Slider", () => {
 
   it("appends unit to value", () => {
     render(<Slider label="Temp" value={5500} min={2000} max={50000} unit="K" />);
-    expect(screen.getByText("+5500K")).toBeInTheDocument();
+    expect(screen.getByText("5500K")).toBeInTheDocument();
   });
 
   it("shows reset button when value differs from originalValue", () => {

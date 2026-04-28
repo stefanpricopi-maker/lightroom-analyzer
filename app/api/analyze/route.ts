@@ -3,8 +3,10 @@ import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { LIGHTROOM_SYSTEM_PROMPT } from "@/app/lib/prompt";
 import { parseAIResponse, validatePayload } from "@/app/lib/apiUtils";
-import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { getClientIp } from "@/app/lib/rateLimit";
+import { checkRateLimitServer } from "@/app/lib/rateLimitServer";
 import { ANALYZE_LIMIT } from "@/app/lib/rateLimitConfigs";
+import { corsOptions, requireCorsAllowed, withCors } from "@/app/lib/cors";
 
 type AllowedMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
@@ -19,23 +21,31 @@ function normalizeMimeType(mimeType: string | null): AllowedMimeType {
 // Prompt caching enabled — the large system prompt is cached for 5 minutes.
 // Subsequent calls within the cache window skip re-processing the prompt,
 // saving ~90% of input tokens on the system prompt.
-const client = new Anthropic({
-  defaultHeaders: {
-    "anthropic-beta": "prompt-caching-2024-07-31",
-  },
-});
+let client: Anthropic | null = null;
+function getAnthropicClient(): Anthropic {
+  if (client) return client;
+  client = new Anthropic({
+    defaultHeaders: {
+      "anthropic-beta": "prompt-caching-2024-07-31",
+    },
+  });
+  return client;
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const corsBlocked = requireCorsAllowed(req);
+    if (corsBlocked) return corsBlocked;
+
     const ip = getClientIp(req);
-    const limit = checkRateLimit(ip, ANALYZE_LIMIT);
+    const { result: limit, headers } = await checkRateLimitServer(ip, ANALYZE_LIMIT);
     if (!limit.allowed) {
-      return NextResponse.json(
-        { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
-        {
-          status: 429,
-          headers: buildRateLimitHeaders(ANALYZE_LIMIT, limit),
-        }
+      return withCors(
+        req,
+        NextResponse.json(
+          { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
+          { status: 429, headers }
+        )
       );
     }
 
@@ -62,16 +72,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (!imageBase64 || !mimeType) {
-      return NextResponse.json(
+      return withCors(req, NextResponse.json(
         { error: "Missing imageBase64 or mimeType" },
         { status: 400 }
-      );
+      ));
     }
 
     const safeMimeType = normalizeMimeType(mimeType);
 
     const invalid = validatePayload(imageBase64);
-    if (invalid) return invalid;
+    if (invalid) return withCors(req, invalid as NextResponse);
 
     const systemBlock: TextBlockParam = {
       type: "text",
@@ -79,7 +89,7 @@ export async function POST(req: NextRequest) {
       cache_control: { type: "ephemeral" },
     };
 
-    const response = await client.messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 1500,
       // System prompt marked as cacheable — processed once, reused across requests
@@ -103,12 +113,16 @@ export async function POST(req: NextRequest) {
 
     const clean = parseAIResponse(response.content);
     const result = JSON.parse(clean);
-    return NextResponse.json(result);
+    return withCors(req, NextResponse.json(result));
   } catch (err) {
     console.error("Analysis error:", err);
-    return NextResponse.json(
+    return withCors(req, NextResponse.json(
       { error: "Failed to analyze image" },
       { status: 500 }
-    );
+    ));
   }
+}
+
+export function OPTIONS(req: NextRequest) {
+  return corsOptions(req);
 }

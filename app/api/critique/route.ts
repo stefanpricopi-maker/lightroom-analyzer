@@ -2,8 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { parseAIResponse, validatePayload } from "@/app/lib/apiUtils";
-import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { getClientIp } from "@/app/lib/rateLimit";
+import { checkRateLimitServer } from "@/app/lib/rateLimitServer";
 import { CRITIQUE_LIMIT } from "@/app/lib/rateLimitConfigs";
+import { corsOptions, requireCorsAllowed, withCors } from "@/app/lib/cors";
 
 type AllowedMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
@@ -48,11 +50,16 @@ Severity guide:
 
 Be honest but constructive. Focus on technical correctness first, creative choices second.`;
 
-const client = new Anthropic({
-  defaultHeaders: {
-    "anthropic-beta": "prompt-caching-2024-07-31",
-  },
-});
+let client: Anthropic | null = null;
+function getAnthropicClient(): Anthropic {
+  if (client) return client;
+  client = new Anthropic({
+    defaultHeaders: {
+      "anthropic-beta": "prompt-caching-2024-07-31",
+    },
+  });
+  return client;
+}
 
 function extractFirstJsonObject(s: string): string | null {
   const start = s.indexOf("{");
@@ -96,29 +103,32 @@ function parseModelJson(raw: string): unknown {
 
 export async function POST(req: NextRequest) {
   try {
+    const corsBlocked = requireCorsAllowed(req);
+    if (corsBlocked) return corsBlocked;
+
     const ip = getClientIp(req);
-    const limit = checkRateLimit(ip, CRITIQUE_LIMIT);
+    const { result: limit, headers } = await checkRateLimitServer(ip, CRITIQUE_LIMIT);
     if (!limit.allowed) {
-      return NextResponse.json(
-        { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
-        {
-          status: 429,
-          headers: buildRateLimitHeaders(CRITIQUE_LIMIT, limit),
-        }
+      return withCors(
+        req,
+        NextResponse.json(
+          { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
+          { status: 429, headers }
+        )
       );
     }
 
     const { imageBase64, mimeType } = await req.json();
 
     if (!imageBase64 || !mimeType) {
-      return NextResponse.json(
+      return withCors(req, NextResponse.json(
         { error: "Missing imageBase64 or mimeType" },
         { status: 400 }
-      );
+      ));
     }
 
     const invalid = validatePayload(imageBase64);
-    if (invalid) return invalid;
+    if (invalid) return withCors(req, invalid as NextResponse);
 
     const safeMimeType = normalizeMimeType(mimeType);
 
@@ -128,7 +138,7 @@ export async function POST(req: NextRequest) {
       cache_control: { type: "ephemeral" },
     };
 
-    const response = await client.messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 1500,
       system: [systemBlock],
@@ -155,21 +165,25 @@ export async function POST(req: NextRequest) {
 
     try {
       const result = parseModelJson(text);
-      return NextResponse.json(result);
+      return withCors(req, NextResponse.json(result));
     } catch (e) {
       console.error("Critique parse error:", e);
       // This is upstream/model formatting, not a server bug.
-      return NextResponse.json(
+      return withCors(req, NextResponse.json(
         { error: "AI returned invalid JSON. Please try again." },
         { status: 502 }
-      );
+      ));
     }
   } catch (err) {
     console.error("Critique error:", err);
-    return NextResponse.json(
+    return withCors(req, NextResponse.json(
       { error: "Failed to critique image" },
       { status: 500 }
-    );
+    ));
   }
+}
+
+export function OPTIONS(req: NextRequest) {
+  return corsOptions(req);
 }
 

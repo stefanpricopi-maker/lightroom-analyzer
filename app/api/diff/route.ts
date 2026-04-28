@@ -2,14 +2,21 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { TextBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { NextRequest, NextResponse } from "next/server";
 import { parseAIResponse } from "@/app/lib/apiUtils";
-import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/app/lib/rateLimit";
+import { getClientIp } from "@/app/lib/rateLimit";
+import { checkRateLimitServer } from "@/app/lib/rateLimitServer";
 import { DIFF_LIMIT } from "@/app/lib/rateLimitConfigs";
+import { corsOptions, requireCorsAllowed, withCors } from "@/app/lib/cors";
 
-const client = new Anthropic({
-  defaultHeaders: {
-    "anthropic-beta": "prompt-caching-2024-07-31",
-  },
-});
+let client: Anthropic | null = null;
+function getAnthropicClient(): Anthropic {
+  if (client) return client;
+  client = new Anthropic({
+    defaultHeaders: {
+      "anthropic-beta": "prompt-caching-2024-07-31",
+    },
+  });
+  return client;
+}
 
 // The static part of the diff prompt — this gets cached
 const DIFF_SYSTEM_PROMPT = `You are an expert photo editor and colorist with deep knowledge of Adobe Lightroom Classic and Lightroom CC.
@@ -53,22 +60,25 @@ Numeric value ranges: Exposure -5 to +5, all others -100 to +100, Temperature 20
 
 export async function POST(req: NextRequest) {
   try {
+    const corsBlocked = requireCorsAllowed(req);
+    if (corsBlocked) return corsBlocked;
+
     const ip = getClientIp(req);
-    const limit = checkRateLimit(ip, DIFF_LIMIT);
+    const { result: limit, headers } = await checkRateLimitServer(ip, DIFF_LIMIT);
     if (!limit.allowed) {
-      return NextResponse.json(
-        { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
-        {
-          status: 429,
-          headers: buildRateLimitHeaders(DIFF_LIMIT, limit),
-        }
+      return withCors(
+        req,
+        NextResponse.json(
+          { error: `Rate limit exceeded. Try again in ${limit.retryAfter} seconds.` },
+          { status: 429, headers }
+        )
       );
     }
 
     const { originalBase64, originalMime, editedBase64, editedMime } = await req.json();
 
     if (!originalBase64 || !editedBase64) {
-      return NextResponse.json({ error: "Missing images" }, { status: 400 });
+      return withCors(req, NextResponse.json({ error: "Missing images" }, { status: 400 }));
     }
 
     const systemBlock: TextBlockParam = {
@@ -77,7 +87,7 @@ export async function POST(req: NextRequest) {
       cache_control: { type: "ephemeral" },
     };
 
-    const response = await client.messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 1500,
       // System prompt cached — saves tokens on every diff request
@@ -98,9 +108,13 @@ export async function POST(req: NextRequest) {
 
     const clean = parseAIResponse(response.content);
     const result = JSON.parse(clean);
-    return NextResponse.json(result);
+    return withCors(req, NextResponse.json(result));
   } catch (err) {
     console.error("Diff error:", err);
-    return NextResponse.json({ error: "Failed to compare images" }, { status: 500 });
+    return withCors(req, NextResponse.json({ error: "Failed to compare images" }, { status: 500 }));
   }
+}
+
+export function OPTIONS(req: NextRequest) {
+  return corsOptions(req);
 }
