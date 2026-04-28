@@ -21,7 +21,8 @@ end
 
 local function exportPhotoToTempJpeg(photo)
   local tempDir = LrPathUtils.getStandardFilePath("temp")
-  local outPath = LrPathUtils.child(tempDir, "lr-analyzer-export-" .. tostring(LrTasks.getCurrentTime()) .. ".jpg")
+  -- Lightroom 5.x doesn't expose LrTasks.getCurrentTime(); os.time() is sufficient for unique temp names.
+  local outPath = LrPathUtils.child(tempDir, "lr-analyzer-export-" .. tostring(os.time()) .. ".jpg")
 
   local session = LrExportSession({
     photosToExport = { photo },
