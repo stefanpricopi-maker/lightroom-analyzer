@@ -156,29 +156,25 @@ LrTasks.startAsyncTask(function()
       if not exportPath then
         -- Skip with a warning, continue.
         LrDialogs.message("LR Analyzer", "Export failed for photo " .. tostring(i) .. ": " .. tostring(exportErr), "warning")
-        goto continue
+      else
+        local exifHint = buildExifHint(photo)
+
+        local payload, apiErr = postBatchAnalyzeFile(exportPath, "image/jpeg", exifHint)
+        if not payload then
+          LrDialogs.message("LR Analyzer", "API error for photo " .. tostring(i) .. ": " .. tostring(apiErr), "warning")
+        else
+          -- Lightroom 5.x: write access may yield; use LrTasks.pcall (yield-safe).
+          local ok, applyErr = LrTasks.pcall(function()
+            applyLightOnly(photo, payload)
+          end)
+          if not ok then
+            LrDialogs.message("LR Analyzer", "Apply failed for photo " .. tostring(i) .. ": " .. tostring(applyErr), "warning")
+          else
+            successCount = successCount + 1
+          end
+        end
       end
 
-      local exifHint = buildExifHint(photo)
-
-      local payload, apiErr = postBatchAnalyzeFile(exportPath, "image/jpeg", exifHint)
-      if not payload then
-        LrDialogs.message("LR Analyzer", "API error for photo " .. tostring(i) .. ": " .. tostring(apiErr), "warning")
-        goto continue
-      end
-
-      -- Lightroom 5.x: write access may yield; use LrTasks.pcall (yield-safe).
-      local ok, applyErr = LrTasks.pcall(function()
-        applyLightOnly(photo, payload)
-      end)
-      if not ok then
-        LrDialogs.message("LR Analyzer", "Apply failed for photo " .. tostring(i) .. ": " .. tostring(applyErr), "warning")
-        goto continue
-      end
-
-      successCount = successCount + 1
-
-      ::continue::
       LrTasks.yield()
     end
 
