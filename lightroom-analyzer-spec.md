@@ -184,6 +184,15 @@ All values: -100 to +100
 - Mirrors the layout of the actual results (header, save section, panels)
 - Uses CSS `@keyframes shimmer` animation
 
+### 13. Toast Notifications
+- Non-blocking toasts for success/error/warn/info
+- Used for key user feedback in analyze + batch flows (including rate-limit messages)
+
+### 14. Rate Limiting (API)
+- Per-IP sliding-window in-memory rate limiting for API routes
+- Configured per route: `ANALYZE_LIMIT`, `DIFF_LIMIT`, `BATCH_LIMIT`, `CRITIQUE_LIMIT` (1h windows)
+- When exceeded, API returns `429` with rate-limit headers (Remaining/Reset/Retry-After)
+
 ---
 
 ## Removed Features
@@ -206,7 +215,6 @@ All values: -100 to +100
 | **Disclaimer banner** | Medium | Note that AI values are estimates, not exact |
 | **Print/PDF summary** | Medium | One-page PDF of all settings for workshops/client handoffs |
 | **Undo history for sliders** | Medium | Step backwards through slider changes |
-| **Rate limiting** | High | Protect API routes before public deployment |
 | **CORS lockdown** | High | Restrict API to own domain for public deployment |
 | **Share as link** | Low | Encode preset into URL to send to another photographer |
 | **Multiple image comparison** | Low | Analyze several images and compare settings side by side |
@@ -258,6 +266,7 @@ User uploads image (up to 50MB)
 - Server-side payload size validation (14MB base64 limit)
 - XMP output sanitized (XML escaping, control char removal, filename sanitization)
 - File type validation client + server side
+- Rate limiting on AI-backed API routes to reduce abuse (best-effort in-memory, per-isolate)
 
 ---
 
@@ -297,6 +306,7 @@ Display font: **Syne 800** · Mono font: **DM Mono 300–500**
 - `setIn.test.ts` — deep value updates, immutability
 - `jsonParsing.test.ts` — JSON cleanup, file size validation
 - `exif.test.ts` — formatting functions, binary EXIF parsing, edge cases
+- `rateLimit.test.ts` — IP detection + sliding window behavior + per-IP isolation + config sanity checks
 
 ### Component Tests (Vitest + React Testing Library)
 - `Slider.test.tsx` — rendering, reset button, modified state, drag

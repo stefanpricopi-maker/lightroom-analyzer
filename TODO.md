@@ -34,6 +34,7 @@
 - [x] File type validation (images only)
 - [x] XMP output sanitized (XML escaping, control char removal, filename-safe)
 - [x] Server-side payload size guard on both `/api/analyze` and `/api/diff`
+- [x] Rate limiting — sliding-window per-IP on API routes (`/api/analyze`, `/api/diff`, `/api/batch-analyze`, `/api/critique`)
 
 ### UI / Design
 - [x] Light minimal theme with dark mode support
@@ -44,6 +45,7 @@
 - [x] Responsive two-column layout
 - [x] Preset Library slide-in drawer
 - [x] Full-width hero title + description
+- [x] Toast notification system (success/error/warn/info) used across analyze + batch flows
 
 ### Testing
 - [x] Vitest + React Testing Library setup
@@ -52,6 +54,7 @@
 - [x] Unit tests: setIn deep update utility (5 tests)
 - [x] Unit tests: JSON parsing + file size validation (11 tests)
 - [x] Unit tests: EXIF reader — formatting functions + binary parsing (40 tests)
+- [x] Unit tests: rate limiting — IP parsing + sliding window + multi-IP + configs (36 tests)
 - [x] Component tests: Slider (12 tests)
 - [x] Component tests: Section collapse/expand (4 tests)
 - [x] Component tests: PresetLibrary search + collection filtering (25 tests)
@@ -73,7 +76,6 @@
 - [ ] **Undo history for sliders** — step backwards through slider changes
 
 ### Security (required before public deployment)
-- [ ] **Rate limiting** — protect `/api/analyze` and `/api/diff` from abuse
 - [ ] **CORS lockdown** — restrict API calls to own domain
 
 ### Low Priority
