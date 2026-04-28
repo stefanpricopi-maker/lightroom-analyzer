@@ -162,19 +162,11 @@ local function applyDevelopSettings(photo, result)
     settings["LuminanceAdjustment" .. ch.key] = clampNumber(lum[ch.field], -100, 100)
   end
 
-  -- Apply. Prefer develop settings application when available; fall back to raw metadata.
-  -- Some Lightroom versions may not support all keys through setRawMetadata.
+  -- Apply develop settings. In Lightroom 5.x, attempting to write develop keys via
+  -- photo:setRawMetadata() fails (unknown metadata key), so always use applyDevelopSettings.
   local catalog = LrApplication.activeCatalog()
   local status = catalog:withWriteAccessDo("LR Analyzer: Apply Develop Settings", function()
-    if photo.applyDevelopSettings then
-      photo:applyDevelopSettings(settings)
-    else
-      for k, v in pairs(settings) do
-        if v ~= nil then
-          photo:setRawMetadata(k, v)
-        end
-      end
-    end
+    photo:applyDevelopSettings(settings)
   end, { timeout = 30 })
 
   if status == "aborted" then

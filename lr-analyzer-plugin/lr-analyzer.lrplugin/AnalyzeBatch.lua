@@ -116,15 +116,7 @@ local function applyLightOnly(photo, payload)
 
   local catalog = LrApplication.activeCatalog()
   local status = catalog:withWriteAccessDo("LR Analyzer: Apply Light (Batch)", function()
-    if photo.applyDevelopSettings then
-      photo:applyDevelopSettings(settings)
-    else
-      for k, v in pairs(settings) do
-        if v ~= nil then
-          photo:setRawMetadata(k, v)
-        end
-      end
-    end
+    photo:applyDevelopSettings(settings)
   end, { timeout = 30 })
 
   if status == "aborted" then
