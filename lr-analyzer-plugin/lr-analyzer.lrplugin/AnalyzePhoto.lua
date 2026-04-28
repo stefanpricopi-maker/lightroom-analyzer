@@ -103,7 +103,7 @@ local function postAnalyzeFile(jpegPath, mimeType, progressScope)
   return decoded
 end
 
-local function applyDevelopSettings(photo, result)
+local function buildDevelopSettings(result)
   -- Lightroom develop setting keys vary by process version.
   -- These keys target Process Version 2012 (Lightroom Classic modern defaults).
   local settings = {}
@@ -162,16 +162,7 @@ local function applyDevelopSettings(photo, result)
     settings["LuminanceAdjustment" .. ch.key] = clampNumber(lum[ch.field], -100, 100)
   end
 
-  -- Apply develop settings. In Lightroom 5.x, attempting to write develop keys via
-  -- photo:setRawMetadata() fails (unknown metadata key), so always use applyDevelopSettings.
-  local catalog = LrApplication.activeCatalog()
-  local status = catalog:withWriteAccessDo("LR Analyzer: Apply Develop Settings", function()
-    photo:applyDevelopSettings(settings)
-  end, { timeout = 30 })
-
-  if status == "aborted" then
-    error("Write access timed out while applying develop settings.")
-  end
+  return settings
 end
 
 LrTasks.startAsyncTask(function()
@@ -214,7 +205,13 @@ LrTasks.startAsyncTask(function()
 
     -- Lightroom 5.x: write access may yield; use LrTasks.pcall (yield-safe).
     local ok, applyErr = LrTasks.pcall(function()
-      applyDevelopSettings(targetPhoto, result)
+      local preset = LrApplication.addDevelopPresetForPlugin(_PLUGIN, "LR Analyzer (temp)", buildDevelopSettings(result))
+      local status = catalog:withWriteAccessDo("LR Analyzer: Apply Develop Settings", function()
+        targetPhoto:applyDevelopPreset(preset, _PLUGIN)
+      end, { timeout = 30 })
+      if status == "aborted" then
+        error("Write access timed out while applying develop settings.")
+      end
     end)
     if not ok then
       LrDialogs.message("LR Analyzer", "Failed to apply settings: " .. tostring(applyErr), "critical")

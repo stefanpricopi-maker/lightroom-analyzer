@@ -116,7 +116,8 @@ local function applyLightOnly(photo, payload)
 
   local catalog = LrApplication.activeCatalog()
   local status = catalog:withWriteAccessDo("LR Analyzer: Apply Light (Batch)", function()
-    photo:applyDevelopSettings(settings)
+    local preset = LrApplication.addDevelopPresetForPlugin(_PLUGIN, "LR Analyzer Light (temp)", settings)
+    photo:applyDevelopPreset(preset, _PLUGIN)
   end, { timeout = 30 })
 
   if status == "aborted" then
